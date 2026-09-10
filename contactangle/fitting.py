@@ -100,22 +100,31 @@ def point_line_distances(points: np.ndarray, wall: np.ndarray) -> np.ndarray:
 
 
 def select_near_wall(
-    points: np.ndarray, wall: np.ndarray, window_frac: float
+    points: np.ndarray, wall: np.ndarray, window_frac: float, exclude_px: float = 0.0
 ) -> np.ndarray:
     """Boolean mask of interface points within ``window_frac * span`` of the wall.
 
     ``span`` is the largest distance of any interface point to the wall, so the
-    window is resolution independent.
+    window is resolution independent.  Points closer than ``exclude_px`` pixels
+    are dropped, which removes a contaminated zone right next to the wall (for
+    example the ~90 px refraction caused by a UV-glue seam) so the fit can
+    extrapolate across it.
     """
     dist = point_line_distances(points, wall)
     span = float(dist.max()) if dist.size else 0.0
     if span <= 0:
         return np.ones(len(points), dtype=bool)
-    return dist <= max(float(window_frac), 1e-6) * span
+    lo = max(float(exclude_px), 0.0)
+    hi = max(float(window_frac), 1e-6) * span
+    return (dist >= lo) & (dist <= hi)
 
 
 def fit_local_polynomial(
-    points: np.ndarray, wall: np.ndarray, window_frac: float = 0.3, degree: int = 2
+    points: np.ndarray,
+    wall: np.ndarray,
+    window_frac: float = 0.3,
+    degree: int = 2,
+    exclude_px: float = 0.0,
 ) -> dict:
     """Fit a low-order polynomial to the near-wall interface and extrapolate.
 
@@ -128,10 +137,14 @@ def fit_local_polynomial(
     ``mask``, ``t_min``, ``t_max``.
     """
     pts = np.asarray(points, dtype=float)
-    mask = select_near_wall(pts, wall, window_frac)
+    mask = select_near_wall(pts, wall, window_frac, exclude_px)
     min_pts = degree + 2  # a few extra points for stability
     if mask.sum() < min_pts:
-        order = np.argsort(point_line_distances(pts, wall))
+        dist = point_line_distances(pts, wall)
+        allowed = np.where(dist >= max(float(exclude_px), 0.0))[0]
+        if allowed.size < min_pts:
+            allowed = np.arange(len(pts))
+        order = allowed[np.argsort(dist[allowed])]
         mask = np.zeros(len(pts), dtype=bool)
         mask[order[:min_pts]] = True
 

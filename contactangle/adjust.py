@@ -1,7 +1,10 @@
-"""Interactive result tuning: adjust the near-wall window and fit model live.
+"""Interactive result tuning: adjust the near-wall window and fit model.
 
 Controls are available both from the keyboard and from on-screen widgets, so
 the tool still works when a CJK input method swallows plain letter keys.
+
+The refraction zone next to the wall (UV-glue seam) is removed automatically
+via a fixed pixel margin (``exclude_px``), so there is nothing to tune for it.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ class ResultAdjuster:
         interface_points: np.ndarray,
         method: str = "local-quad",
         window: float = 0.3,
+        exclude_px: float = 90.0,
         step: float = 0.05,
     ):
         self.img = img
@@ -46,6 +50,7 @@ class ResultAdjuster:
         self.points = np.asarray(interface_points, dtype=float)
         self.method = method if method in ALL_METHODS else "local-quad"
         self.window = float(window)
+        self.exclude_px = float(exclude_px)
         self.step = step
         self.result = None
         self.accepted = False
@@ -61,9 +66,11 @@ class ResultAdjuster:
         self.ax = self.fig.add_axes([0.06, 0.24, 0.88, 0.72])
         self.ax.set_axis_off()
 
-        ax_slider = self.fig.add_axes([0.30, 0.165, 0.45, 0.03])
-        self.slider = Slider(ax_slider, "window", 0.05, 1.0, valinit=self.window, valstep=0.05)
-        self.slider.on_changed(self._on_slider)
+        ax_window = self.fig.add_axes([0.30, 0.165, 0.45, 0.03])
+        self.window_slider = Slider(
+            ax_window, "window", 0.05, 1.0, valinit=self.window, valstep=0.05
+        )
+        self.window_slider.on_changed(self._on_window_slider)
 
         ax_model = self.fig.add_axes([0.28, 0.095, 0.49, 0.05])
         self.model_btn = Button(ax_model, self._model_label())
@@ -86,9 +93,9 @@ class ResultAdjuster:
     def _set_window(self, value: float) -> None:
         value = round(float(value) / self.step) * self.step
         self.window = float(np.clip(value, 0.05, 1.0))
-        self.slider.eventson = False
-        self.slider.set_val(self.window)
-        self.slider.eventson = True
+        self.window_slider.eventson = False
+        self.window_slider.set_val(self.window)
+        self.window_slider.eventson = True
         self._update()
 
     def _cycle_method(self, _event=None) -> None:
@@ -114,7 +121,11 @@ class ResultAdjuster:
         self.ax.set_ylim(self._lims[2], self._lims[3])
 
         self.result = compute_contact_angle(
-            self.wall, self.points, method=self.method, window=self.window
+            self.wall,
+            self.points,
+            method=self.method,
+            window=self.window,
+            exclude_px=self.exclude_px,
         )
         visualize.plot_overlay(self.ax, self.wall, self.points, self.result)
 
@@ -122,7 +133,8 @@ class ResultAdjuster:
             0.02,
             0.98,
             f"contact angle = {self.result.theta_deg:.2f} deg\n"
-            f"method = {self.method}   window = {self.window:.2f}",
+            f"method = {self.method}   window = {self.window:.2f}   "
+            f"exclude = {self.exclude_px:.0f} px",
             transform=self.ax.transAxes,
             va="top",
             ha="left",
@@ -134,7 +146,7 @@ class ResultAdjuster:
         self.fig.canvas.draw_idle()
 
     # ------------------------------------------------------------------ input
-    def _on_slider(self, value) -> None:
+    def _on_window_slider(self, value) -> None:
         self.window = float(np.clip(value, 0.05, 1.0))
         self._update()
 

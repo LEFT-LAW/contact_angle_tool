@@ -26,6 +26,7 @@ class ContactAngleResult:
     poly_fit: dict | None = None
     used_mask: np.ndarray | None = None
     window: float | None = None
+    exclude_px: float | None = None
     meta: dict = field(default_factory=dict)
 
 
@@ -80,6 +81,7 @@ def compute_contact_angle(
     interface_points: np.ndarray,
     method: str = "local-quad",
     window: float = 0.3,
+    exclude_px: float = 90.0,
 ) -> ContactAngleResult:
     """Measure the contact angle between the interface and the wall.
 
@@ -100,6 +102,9 @@ def compute_contact_angle(
     window:
         For the local methods, the fraction of the interface span (distance
         from the wall to the far end of the interface) used for the fit.
+    exclude_px:
+        Pixels next to the wall to ignore (removes the ~90 px UV-glue
+        refraction zone).
     """
     wall = np.asarray(wall, dtype=float)
     if wall.shape != (2, 2):
@@ -122,13 +127,15 @@ def compute_contact_angle(
 
     if method in ("local-quad", "local-line"):
         degree = 2 if method == "local-quad" else 1
-        poly_fit = fitting.fit_local_polynomial(pts, wall, window, degree=degree)
+        poly_fit = fitting.fit_local_polynomial(
+            pts, wall, window, degree=degree, exclude_px=exclude_px
+        )
         point = poly_fit["point"]
         tangent = poly_fit["tangent"]
         used_mask = poly_fit["mask"]
         fit_type = f"poly{degree}"
     elif method == "local-circle":
-        used_mask = fitting.select_near_wall(pts, wall, window)
+        used_mask = fitting.select_near_wall(pts, wall, window, exclude_px)
         local = pts[used_mask]
         if len(local) < 3:
             used_mask = np.ones(len(pts), dtype=bool)
@@ -167,4 +174,5 @@ def compute_contact_angle(
         poly_fit=poly_fit,
         used_mask=used_mask,
         window=window,
+        exclude_px=exclude_px,
     )

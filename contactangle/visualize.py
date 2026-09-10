@@ -47,10 +47,27 @@ def plot_overlay(ax, wall, interface_points, result: ContactAngleResult) -> None
     if mask is None:
         mask = np.ones(len(interface_points), dtype=bool)
     mask = np.asarray(mask, dtype=bool)
-    if (~mask).any():
+
+    # Points dropped by the near-wall exclusion band (e.g. a UV-glue seam).
+    excluded = np.zeros(len(interface_points), dtype=bool)
+    if result.exclude_px and result.exclude_px > 0:
+        dist = fitting.point_line_distances(interface_points, wall)
+        excluded = (~mask) & (dist < result.exclude_px)
+
+    others = ~mask & ~excluded
+    if excluded.any():
         ax.plot(
-            interface_points[~mask, 0],
-            interface_points[~mask, 1],
+            interface_points[excluded, 0],
+            interface_points[excluded, 1],
+            ".",
+            color="gray",
+            ms=6,
+            label="excluded near wall",
+        )
+    if others.any():
+        ax.plot(
+            interface_points[others, 0],
+            interface_points[others, 1],
             ".",
             color="deepskyblue",
             ms=6,
@@ -97,7 +114,7 @@ def draw_result(
         0.02,
         0.98,
         f"contact angle = {result.theta_deg:.2f} deg\n"
-        f"method={result.method}  window={result.window}",
+        f"method={result.method}  window={result.window}  exclude={result.exclude_px:.0f}px",
         transform=ax.transAxes,
         va="top",
         ha="left",
@@ -130,6 +147,7 @@ def save_json(
         "method": result.method,
         "fit_type": result.fit_type,
         "window": result.window,
+        "exclude_px": result.exclude_px,
         "wall": np.asarray(wall, float).round(2).tolist(),
         "interface_points": np.asarray(interface_points, float).round(2).tolist(),
         "used_mask": None

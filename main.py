@@ -17,7 +17,7 @@ import argparse
 import os
 import sys
 
-from contactangle import imageio, manual, visualize
+from contactangle import detect, imageio, manual, visualize
 from contactangle.adjust import ResultAdjuster
 from contactangle.angle import ALL_METHODS, compute_contact_angle
 
@@ -43,6 +43,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="near-wall window as a fraction of the interface span (default: 0.3)",
     )
     p.add_argument(
+        "--exclude-px",
+        type=float,
+        default=90.0,
+        help="pixels next to the left wall to ignore, i.e. the UV-glue "
+        "refraction zone (default: 90)",
+    )
+    p.add_argument(
+        "--auto",
+        action="store_true",
+        help="auto-detect the left wall and interface instead of picking manually",
+    )
+    p.add_argument(
         "--no-adjust",
         action="store_true",
         help="skip the interactive tuning window and save immediately",
@@ -56,7 +68,21 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     img = imageio.load_image(args.image, rotate=args.rotate)
-    picked = manual.run_manual(img)
+
+    picked = None
+    if args.auto:
+        found = detect.detect(img)
+        if len(found["interface"]) >= 3:
+            picked = {"wall": found["wall"], "interface": found["interface"]}
+            print(
+                f"auto: left wall x={found['wall'][0][0]:.0f}->{found['wall'][1][0]:.0f}, "
+                f"interface points={len(found['interface'])}"
+            )
+        else:
+            print("auto detection failed, falling back to manual picking.")
+
+    if picked is None:
+        picked = manual.run_manual(img)
     if not picked:
         print("cancelled.")
         return 1
@@ -65,10 +91,15 @@ def main(argv: list[str] | None = None) -> int:
     interface_points = picked["interface"]
 
     method, window = args.method, args.window
+    exclude_px = args.exclude_px
     if args.no_adjust:
-        result = compute_contact_angle(wall, interface_points, method=method, window=window)
+        result = compute_contact_angle(
+            wall, interface_points, method=method, window=window, exclude_px=exclude_px
+        )
     else:
-        tuned = ResultAdjuster(img, wall, interface_points, method=method, window=window).run()
+        tuned = ResultAdjuster(
+            img, wall, interface_points, method=method, window=window, exclude_px=exclude_px
+        ).run()
         if tuned is None:
             print("cancelled at adjust step.")
             return 1
@@ -83,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"theta = {result.theta_deg:.2f} deg  "
-        f"(method={method}, window={window:.2f}, fit={result.fit_type})"
+        f"(method={method}, window={window:.2f}, exclude={result.exclude_px:.0f}px, "
+        f"fit={result.fit_type})"
     )
     print(f"annotated: {os.path.abspath(png_path)}")
     print(f"json     : {os.path.abspath(json_path)}")
