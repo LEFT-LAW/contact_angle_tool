@@ -24,12 +24,20 @@ METHOD_CYCLE = [
     "global-line",
 ]
 
+METHOD_LABELS = {
+    "local-quad": "local quadratic",
+    "local-line": "local line",
+    "local-circle": "local circle",
+    "global-circle": "global circle",
+    "global-line": "global line",
+}
+
 
 class ResultAdjuster:
-    """Show the fitted result and let the user tune window/model in real time.
+    """Show the fitted result and let the user pick model / tune window live.
 
-    On-screen: drag the *window* slider, click the *model* button to cycle the
-    fit, click *Save* / *Cancel*.
+    On-screen: click a *model* button, drag the *window* slider, click *Save*
+    / *Cancel*.
 
     Keyboard: ``[`` / ``]`` window, ``1``..``5`` pick model, ``m`` cycle model,
     ``Enter`` save, ``Esc`` cancel.
@@ -63,18 +71,24 @@ class ResultAdjuster:
             self.fig.canvas.manager.set_window_title("contact angle - adjust")
         except Exception:
             pass
-        self.ax = self.fig.add_axes([0.06, 0.24, 0.88, 0.72])
+        self.ax = self.fig.add_axes([0.06, 0.26, 0.88, 0.70])
         self.ax.set_axis_off()
+
+        # One row of model buttons, one per fit method.
+        self.model_buttons: dict[str, Button] = {}
+        n = len(METHOD_CYCLE)
+        width, gap, x0 = 0.17, 0.0125, 0.05
+        for i, m in enumerate(METHOD_CYCLE):
+            ax = self.fig.add_axes([x0 + i * (width + gap), 0.105, width, 0.05])
+            btn = Button(ax, METHOD_LABELS.get(m, m))
+            btn.on_clicked(lambda _e, mm=m: self._select_method(mm))
+            self.model_buttons[m] = btn
 
         ax_window = self.fig.add_axes([0.30, 0.165, 0.45, 0.03])
         self.window_slider = Slider(
             ax_window, "window", 0.05, 1.0, valinit=self.window, valstep=0.05
         )
         self.window_slider.on_changed(self._on_window_slider)
-
-        ax_model = self.fig.add_axes([0.28, 0.095, 0.49, 0.05])
-        self.model_btn = Button(ax_model, self._model_label())
-        self.model_btn.on_clicked(self._cycle_method)
 
         ax_save = self.fig.add_axes([0.16, 0.025, 0.30, 0.05])
         ax_cancel = self.fig.add_axes([0.54, 0.025, 0.30, 0.05])
@@ -87,9 +101,6 @@ class ResultAdjuster:
         self._update()
 
     # ------------------------------------------------------------------ state
-    def _model_label(self) -> str:
-        return f"model: {self.method}   (click to cycle)"
-
     def _set_window(self, value: float) -> None:
         value = round(float(value) / self.step) * self.step
         self.window = float(np.clip(value, 0.05, 1.0))
@@ -98,11 +109,22 @@ class ResultAdjuster:
         self.window_slider.eventson = True
         self._update()
 
+    def _select_method(self, method: str, _event=None) -> None:
+        self.method = method
+        self._update()
+
     def _cycle_method(self, _event=None) -> None:
         i = METHOD_CYCLE.index(self.method) if self.method in METHOD_CYCLE else 0
-        self.method = METHOD_CYCLE[(i + 1) % len(METHOD_CYCLE)]
-        self.model_btn.label.set_text(self._model_label())
-        self._update()
+        self._select_method(METHOD_CYCLE[(i + 1) % len(METHOD_CYCLE)])
+
+    def _highlight_model(self) -> None:
+        for m, btn in self.model_buttons.items():
+            active = m == self.method
+            color = "gold" if active else "0.85"
+            btn.color = color
+            btn.hovercolor = "#ffe680" if active else "0.95"
+            btn.ax.set_facecolor(color)
+        self.fig.canvas.draw_idle()
 
     def _accept(self, _event=None) -> None:
         self.accepted = True
@@ -143,6 +165,7 @@ class ResultAdjuster:
             bbox=dict(facecolor="white", alpha=0.85, edgecolor="gray"),
         )
         self.ax.legend(loc="lower right", fontsize=8)
+        self._highlight_model()
         self.fig.canvas.draw_idle()
 
     # ------------------------------------------------------------------ input
@@ -159,9 +182,7 @@ class ResultAdjuster:
         elif key == "m":
             self._cycle_method()
         elif key in ("1", "2", "3", "4", "5"):
-            self.method = METHOD_CYCLE[int(key) - 1]
-            self.model_btn.label.set_text(self._model_label())
-            self._update()
+            self._select_method(METHOD_CYCLE[int(key) - 1])
         elif key in ("enter", "return"):
             self._accept()
         elif key == "escape":

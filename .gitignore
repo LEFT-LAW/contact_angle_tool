@@ -7,6 +7,10 @@ venv/
 
 # Tool outputs (generated)
 output/
+outputs/
+
+# Local test folders
+batch/
 
 # Editors / OS
 .vscode/
