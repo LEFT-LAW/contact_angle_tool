@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tool outputs (generated)
+output/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
